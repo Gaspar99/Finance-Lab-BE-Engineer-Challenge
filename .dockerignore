@@ -1,0 +1,12 @@
+.env
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+service-account-key.json
+.git/
+.gitignore
+.dockerignore
+ARCHITECTURE.md
+ROADMAP.md
+README.md

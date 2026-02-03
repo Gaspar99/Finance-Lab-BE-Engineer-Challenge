@@ -1,0 +1,147 @@
+#Project requeriments: 
+Backend Engineer Challenge
+(We give you 72hs to complete and return)
+
+We are looking for a Backend Engineer who can build a secure, high-performance data
+pipeline on Google Cloud. Your goal is to transform "messy" ultrasound PDFs into
+structured, actionable JSON data.
+👉 The Challenge: Cloud-Native PDF Processing
+Build a REST API that automates the extraction and storage of medical ultrasound
+reports. You must use Google Cloud Services for the core infrastructure.
+The Workflow:
+1. Secure Ingestion: An endpoint to upload PDF reports.
+2. Extraction Engine: Use a document OCR, form parser or Google Cloud
+Document AI to extract: Patient, Owner, Veterinarian, Diagnosis, and
+Recommendations.
+3. Image Asset Management: Extract images from the PDF and store them in
+Google Cloud Storage (GCS).
+4. Database & API: Store the structured metadata in a database (e.g., Cloud SQL
+or Firestore) and provide a GET endpoint to retrieve the json and don't forget the
+images.
+📩 Deliverables:
+● The Code: Public GitHub repository with a clear README.md.
+● The Live API: A hosted endpoint (e.g., running on Cloud Run or App Engine).
+● The Technical Walkthrough (5 min video):
+○ Show a demo of the API in action (using Postman or cURL).
+○ Explain your architectural choices regarding GCP services.
+
+💡 Evaluation Criteria:
+We will evaluate your submission based on four pillars of cloud engineering:
+authentication, scalability, security and usage of GCP services.
+
+#Architecture decisions 
+**Endpoints**
+
+For a firts version, i will create the two basic endpoint. One POST endpoint to upload the pdf. And one GET endpoint to retrive the json and the images. 
+
+In this firts version, the proccess will be a synchronous proccess. 
+
+If i have time, i can do a asynchronous proccess and add another endpoint like:
+
+- GET /reports/{id}/status
+- GET /reports
+- DELETE /reports/{id}
+
+For the images, i gonna pass the url’s GCP images on the json. 
+
+**OCR options**
+
+I need to use Document AI. It have a ia tool, so i can extract the data in best way. It is useful becouse it have ability to extract informactio from diferent formats.  
+
+**Data Base**
+
+For the data base i will use Firestore. Is the Google Cloud NoSQL option. 
+
+<aside>
+💡
+
+"Elegí Firestore sobre Cloud SQL por tres razones:
+
+1. Escalabilidad: Firestore escala automáticamente de 0 a millones
+de documentos sin intervención, mientras SQL requiere gestión manual.
+2. Modelo de datos: Mi estructura es naturalmente un documento JSON,
+no necesito JOINs ni relaciones complejas.
+3. Serverless: Cero gestión de infraestructura, backups automáticos,
+y free tier generoso que cubre el proyecto completamente.
+
+Para casos con transacciones complejas o queries analíticos,
+evaluaría Cloud SQL o BigQuery."
+
+</aside>
+
+**Data Base Schema**
+
+```jsx
+// Collection: reports
+
+{
+  // Identificadores
+  "id": "report_abc123",
+  "created_at": "2025-02-02T14:30:00Z",
+  "status": "completed",
+  
+  // CAMPOS REQUERIDOS POR EL CHALLENGE
+  "patient": "Chester",
+  "owner": "Naveda", 
+  "veterinarian": "MV. Martin Vittaz",
+  "diagnosis": "Imágenes sugerentes de osteosarcoma en húmero derecho",
+  "recommendations": "Control radiológico en 30 días",
+  
+  // Archivos (parte del challenge)
+  "images": [
+    {
+      "url": "https://storage.googleapis.com/bucket/img1.jpg",
+      "filename": "image_1.jpg"
+    },
+    {
+      "url": "https://storage.googleapis.com/bucket/img2.jpg", 
+      "filename": "image_2.jpg"
+    }
+  ]
+}
+```
+
+**Autenticación**
+
+I will use a simple API key.
+
+First Version of the File Structure: 
+Finance-Lab-BE-Engineer-Challenge/
+│
+├── [README.md](http://readme.md/)                    # Documentación profesional
+├── .env.example                 # Template de variables de entorno
+├── .env                         # Variables locales (git-ignored)
+├── .gitignore                   # Archivos a ignorar
+├── requirements.txt             # Dependencias Python
+├── Dockerfile                   # Container para Cloud Run
+├── .dockerignore               # Archivos a excluir del build
+├── cloudbuild.yaml             # CI/CD config (opcional)
+│
+├── app/
+│   ├── init.py
+│   ├── [main.py](http://main.py/)                 # FastAPI app + startup
+│   ├── [config.py](http://config.py/)               # Configuración centralizada
+│   │
+│   ├── api/
+│   │   ├── init.py
+│   │   ├── [routes.py](http://routes.py/)           # Endpoints: POST /reports, GET /reports/{id}
+│   │   └── [dependencies.py](http://dependencies.py/)     # Auth middleware (API key)
+│   │
+│   ├── services/
+│   │   ├── init.py
+│   │   ├── pdf_processor.py    # Orquestador principal del pipeline
+│   │   ├── ocr_service.py      # Vision API integration
+│   │   ├── storage_service.py  # Cloud Storage: upload + signed URLs
+│   │   └── firestore_service.py # Firestore: CRUD operations
+│   │
+│   ├── models/
+│   │   ├── init.py
+│   │   ├── [schemas.py](http://schemas.py/)          # Pydantic models (request/response)
+│   │   └── [report.py](http://report.py/)           # Report data model
+│   │
+│   └── utils/
+│       ├── init.py
+│       ├── [extractors.py](http://extractors.py/)       # Pattern matching para campos
+│       ├── pdf_utils.py        # Helpers: extraer imágenes del PDF
+│       ├── [validators.py](http://validators.py/)       # Validaciones de datos
+│       └── [exceptions.py](http://exceptions.py/)       # Custom exceptions
