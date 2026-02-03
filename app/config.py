@@ -1,6 +1,8 @@
 import os
+from dotenv import load_dotenv
 from google.cloud import secretmanager
 
+load_dotenv()
 
 # --- Env vars (set locally in .env, set in Cloud Run config in production) ---
 
