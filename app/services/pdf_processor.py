@@ -1,4 +1,5 @@
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 from app.models.report import ReportStatus
@@ -20,20 +21,23 @@ def process_report(pdf_bytes: bytes, original_filename: str) -> dict:
         if not pdf_bytes:
             raise InvalidFileError("Uploaded file is empty")
 
-        # 1. OCR — extract structured fields from the PDF
-        fields = ocr_service.extract_fields(pdf_bytes)
+        # 1. OCR and image extraction run in parallel (both only read pdf_bytes)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            fields_future = pool.submit(ocr_service.extract_fields, pdf_bytes)
+            images_future = pool.submit(extract_images, pdf_bytes)
+            fields = fields_future.result()
+            raw_images = images_future.result()
 
-        # 2. Images — pull embedded images out of the PDF
-        raw_images = extract_images(pdf_bytes)
-
-        # 3. Storage — upload each image to GCS, collect signed URLs
-        images = []
-        for filename, image_bytes in raw_images:
-            # Namespace filenames under this report so they don't collide
+        # 2. Upload all images to GCS concurrently, then sign URLs
+        def _upload_and_sign(filename: str, image_bytes: bytes) -> dict:
             namespaced = f"{report_id}/{filename}"
             storage_service.upload_image(image_bytes, namespaced)
             url = storage_service.generate_signed_url(namespaced)
-            images.append({"filename": filename, "url": url})
+            return {"filename": filename, "url": url}
+
+        with ThreadPoolExecutor(max_workers=min(len(raw_images), 10) or 1) as pool:
+            futures = [pool.submit(_upload_and_sign, fn, data) for fn, data in raw_images]
+            images = [f.result() for f in futures]
 
         # 4. Assemble the report document
         report_data = {

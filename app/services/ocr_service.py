@@ -1,5 +1,6 @@
 import io
 import re
+from concurrent.futures import ThreadPoolExecutor
 
 import pikepdf
 from google.cloud import documentai
@@ -45,15 +46,19 @@ def extract_fields(pdf_bytes: bytes) -> dict:
         client = documentai.DocumentProcessorServiceClient()
         name = client.common_project_path(GCP_PROJECT_ID) + f"/locations/us/processors/{DOCUMENT_AI_PROCESSOR_ID}"
 
-        # Process each chunk and join all OCR text
-        full_text_parts: list[str] = []
-        for chunk in _split_pdf(pdf_bytes):
+        def _process_chunk(index: int, chunk: bytes) -> tuple[int, str]:
             document = documentai.RawDocument(content=chunk, mime_type="application/pdf")
             request = documentai.ProcessRequest(name=name, raw_document=document, imageless_mode=True)
             result = client.process_document(request=request)
-            full_text_parts.append(result.document.text)
+            return index, result.document.text
 
-        full_text = "\n".join(full_text_parts)
+        chunks = _split_pdf(pdf_bytes)
+        with ThreadPoolExecutor(max_workers=len(chunks)) as pool:
+            futures = [pool.submit(_process_chunk, i, chunk) for i, chunk in enumerate(chunks)]
+            # Collect results and sort by original chunk index to preserve page order
+            parts = sorted((f.result() for f in futures), key=lambda x: x[0])
+
+        full_text = "\n".join(text for _, text in parts)
 
         # DEBUG — dump full OCR text
         print(f"[DOC-AI TEXT]\n{full_text}\n[/DOC-AI TEXT]", flush=True)
