@@ -53,7 +53,7 @@ Retrieve a previously processed report.
 
 - **Cloud Run**: Serverless container hosting with automatic scaling
 - **Document AI**: OCR processor for text extraction from PDFs
-- **Vertex AI**: Gemini 2.5 Flash for intelligent field extraction
+- **Vertex AI**: Gemini 2.5 Flash for intelligent field extraction and Gemini 2.0 Flash Lite for image classification
 - **Cloud Storage**: Private bucket for image storage with signed URL access
 - **Firestore**: NoSQL database for report persistence
 - **Secret Manager**: Secure API key storage
@@ -69,12 +69,12 @@ app/
 │   └── dependencies.py     # API key validation middleware
 ├── services/
 │   ├── pdf_processor.py    # Orchestrates the processing pipeline
-│   ├── ocr_service.py      # Document AI integration + PDF chunking
-│   ├── llm_service.py      # Gemini prompt and response handling
+│   ├── ocr_service.py      # Document AI integration and PDF chunking
+│   ├── llm_service.py      # Gemini field extraction and image classification
 │   ├── storage_service.py  # GCS upload and signed URL generation
 │   └── firestore_service.py # Report CRUD operations
 └── utils/
-    ├── pdf_utils.py        # Image extraction from PDFs using pikepdf
+    ├── pdf_utils.py        # Image extraction and medical image filtering
     └── exceptions.py       # Custom exception classes
 ```
 
@@ -84,9 +84,17 @@ app/
 
 Veterinary reports come in many formats and layouts. Gemini 2.5 Flash can semantically understand the document structure and extract fields regardless of specific labels or formatting. The model is configured with `response_mime_type: application/json` to guarantee valid JSON output.
 
-### Why Document AI + Gemini (two-step pipeline)?
+### Why Document AI and Gemini?
 
 Document AI excels at OCR - converting PDF pages to text with high accuracy. Gemini excels at understanding and extracting structured data from unstructured text. Combining them leverages the strengths of each: reliable text extraction followed by intelligent field identification.
+
+### Why filter images with Gemini Vision?
+
+PDFs contain many non-medical images. Each image is classified using Gemini 2.0 Flash Lite to determine if it's a real medical diagnostic image or a non-medical element. Only medical images are stored and returned to the client.
+
+### Why Gemini 2.0 Flash Lite for image classification?
+
+Gemini 2.0 Flash Lite is faster, cheaper, and doesn't use thinking tokens like Gemini 2.5 Flash. 
 
 ### Why signed URLs instead of public images?
 
