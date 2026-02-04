@@ -79,8 +79,9 @@ def extract_fields_with_llm(ocr_text: str) -> dict:
         response = model.generate_content(
             prompt,
             generation_config={
-                "temperature": 0.1, 
-                "max_output_tokens": 2048,
+                "temperature": 0.1,
+                "max_output_tokens": 4096,
+                "response_mime_type": "application/json",
             }
         )
 
