@@ -1,4 +1,5 @@
 import io
+from concurrent.futures import ThreadPoolExecutor
 
 import pikepdf
 from PIL import Image
@@ -31,3 +32,35 @@ def extract_images(pdf_bytes: bytes) -> list[tuple[str, bytes]]:
 
     pdf.close()
     return images
+
+
+def filter_medical_images(images: list[tuple[str, bytes]]) -> list[tuple[str, bytes]]:
+    """Filter images to keep only medical diagnostic images using parallel classification.
+
+    Uses Gemini Vision to classify each image as medical or non-medical.
+    Images are classified in parallel for better performance.
+
+    Args:
+        images: List of (filename, image_bytes) tuples
+
+    Returns:
+        Filtered list containing only medical diagnostic images
+    """
+    if not images:
+        return []
+
+    from app.services.llm_service import classify_image
+
+    def _classify(item: tuple[str, bytes]) -> tuple[str, bytes, bool]:
+        filename, data = item
+        try:
+            is_medical = classify_image(data)
+        except Exception:
+            # Fail-open: keep image if classification fails
+            is_medical = True
+        return (filename, data, is_medical)
+
+    with ThreadPoolExecutor(max_workers=min(len(images), 5)) as pool:
+        results = list(pool.map(_classify, images))
+
+    return [(fn, data) for fn, data, is_medical in results if is_medical]

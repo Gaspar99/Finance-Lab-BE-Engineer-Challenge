@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from app.models.report import ReportStatus
 from app.services import ocr_service, storage_service, firestore_service
-from app.utils.pdf_utils import extract_images
+from app.utils.pdf_utils import extract_images, filter_medical_images
 from app.utils.exceptions import InvalidFileError
 
 
@@ -28,15 +28,18 @@ def process_report(pdf_bytes: bytes, original_filename: str) -> dict:
             fields = fields_future.result()
             raw_images = images_future.result()
 
-        # 2. Upload all images to GCS concurrently, then sign URLs
+        # 2. Filter to keep only medical diagnostic images (parallel classification)
+        medical_images = filter_medical_images(raw_images)
+
+        # 3. Upload all medical images to GCS concurrently, then sign URLs
         def _upload_and_sign(filename: str, image_bytes: bytes) -> dict:
             namespaced = f"{report_id}/{filename}"
             storage_service.upload_image(image_bytes, namespaced)
             url = storage_service.generate_signed_url(namespaced)
             return {"filename": filename, "url": url}
 
-        with ThreadPoolExecutor(max_workers=min(len(raw_images), 10) or 1) as pool:
-            futures = [pool.submit(_upload_and_sign, fn, data) for fn, data in raw_images]
+        with ThreadPoolExecutor(max_workers=min(len(medical_images), 10) or 1) as pool:
+            futures = [pool.submit(_upload_and_sign, fn, data) for fn, data in medical_images]
             images = [f.result() for f in futures]
 
         # 4. Assemble the report document
