@@ -14,11 +14,17 @@ def extract_images(pdf_bytes: bytes) -> list[tuple[str, bytes]]:
             if obj.get("/Subtype") != pikepdf.Name("/Image"):
                 continue
 
-            raw = obj.read_raw_bytes()
-            # Convert to JPEG via Pillow to normalise format
-            pil_image = Image.open(io.BytesIO(raw)).convert("RGB")
-            buf = io.BytesIO()
-            pil_image.save(buf, format="JPEG")
+            try:
+                try:
+                    data = obj.read_bytes()
+                except Exception:
+                    data = obj.read_raw_bytes()
+
+                pil_image = Image.open(io.BytesIO(data)).convert("RGB")
+                buf = io.BytesIO()
+                pil_image.save(buf, format="JPEG")
+            except Exception:
+                continue
 
             filename = f"report_image_{page_number + 1}_{index + 1}.jpeg"
             images.append((filename, buf.getvalue()))
