@@ -1,25 +1,18 @@
 import io
-import re
 from concurrent.futures import ThreadPoolExecutor
 
 import pikepdf
 from google.cloud import documentai
 
 from app.config import GCP_PROJECT_ID, DOCUMENT_AI_PROCESSOR_ID
+from app.services.llm_service import extract_fields_with_llm
 from app.utils.exceptions import ExtractionError
 
-_PAGE_LIMIT = 15 
-
-_PATIENT_RE = re.compile(r"(?i)(?:paciente|patient)\s*:\s*(.+)")
-_OWNER_RE = re.compile(r"(?i)(?:propietario|owner|dueño)\s*:\s*(.+)")
-_VET_RE = re.compile(r"(?i)(?:referido\s+por|veterinario|profesional)\s*:\s*(.+)")
-_SECTION_BREAK = r"(?=\n[A-Z][A-Z ]{3,}\n|\Z)"
-_CONCLUSION_RE = re.compile(r"(?i)CONCLUSION\s*\n(.*?)" + _SECTION_BREAK, re.DOTALL)
-_RECOMMENDATIONS_RE = re.compile(r"(?i)(?:recomendaciones|indicaciones)\s*[:\n]\s*(.*?)" + _SECTION_BREAK, re.DOTALL)
+_PAGE_LIMIT = 15
 
 
 def _split_pdf(pdf_bytes: bytes) -> list[bytes]:
-    
+    """Split a PDF into chunks of max _PAGE_LIMIT pages for Document AI processing."""
     pdf = pikepdf.open(io.BytesIO(pdf_bytes))
     total = len(pdf.pages)
     if total <= _PAGE_LIMIT:
@@ -41,47 +34,45 @@ def _split_pdf(pdf_bytes: bytes) -> list[bytes]:
 
 
 def extract_fields(pdf_bytes: bytes) -> dict:
-    """Send PDF to Document AI (chunked if >30 pages) and extract fields."""
-    try:
-        client = documentai.DocumentProcessorServiceClient()
-        name = client.common_project_path(GCP_PROJECT_ID) + f"/locations/us/processors/{DOCUMENT_AI_PROCESSOR_ID}"
+    """Extract fields from PDF using Document AI for OCR and Gemini for field extraction.
 
+    Pipeline:
+    1. Split PDF into chunks if needed (Document AI has page limits)
+    2. Send chunks to Document AI for OCR
+    3. Send OCR text to Gemini LLM for intelligent field extraction
+
+    Returns:
+        dict with keys: patient, owner, veterinarian, diagnosis, recommendations
+    """
+    try:
+        # Step 1: Initialize Document AI client
+        client = documentai.DocumentProcessorServiceClient()
+        processor_name = (
+            f"projects/{GCP_PROJECT_ID}/locations/us/processors/{DOCUMENT_AI_PROCESSOR_ID}"
+        )
+
+        # Step 2: Process each chunk with Document AI
         def _process_chunk(index: int, chunk: bytes) -> tuple[int, str]:
             document = documentai.RawDocument(content=chunk, mime_type="application/pdf")
-            request = documentai.ProcessRequest(name=name, raw_document=document, imageless_mode=True)
+            request = documentai.ProcessRequest(
+                name=processor_name,
+                raw_document=document,
+                imageless_mode=True
+            )
             result = client.process_document(request=request)
             return index, result.document.text
 
         chunks = _split_pdf(pdf_bytes)
         with ThreadPoolExecutor(max_workers=len(chunks)) as pool:
             futures = [pool.submit(_process_chunk, i, chunk) for i, chunk in enumerate(chunks)]
-            # Collect results and sort by original chunk index to preserve page order
             parts = sorted((f.result() for f in futures), key=lambda x: x[0])
 
         full_text = "\n".join(text for _, text in parts)
 
-        # DEBUG — dump full OCR text
-        print(f"[DOC-AI TEXT]\n{full_text}\n[/DOC-AI TEXT]", flush=True)
+        # Step 3: Send OCR text to Gemini for intelligent extraction
+        return extract_fields_with_llm(full_text)
 
-        return _parse_fields_from_text(full_text)
     except ExtractionError:
         raise
     except Exception as e:
         raise ExtractionError(f"Document AI processing failed: {e}")
-
-
-def _first_match(pattern: re.Pattern, text: str) -> str | None:
-    """Return the first captured group stripped, or None."""
-    m = pattern.search(text)
-    return m.group(1).strip() if m else None
-
-
-def _parse_fields_from_text(text: str) -> dict:
-    """Extract fields from the full OCR'd text using label-based regex."""
-    return {
-        "patient": _first_match(_PATIENT_RE, text),
-        "owner": _first_match(_OWNER_RE, text),
-        "veterinarian": _first_match(_VET_RE, text),
-        "diagnosis": _first_match(_CONCLUSION_RE, text),
-        "recommendations": _first_match(_RECOMMENDATIONS_RE, text),
-    }

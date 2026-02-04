@@ -11,6 +11,7 @@ GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME")
 FIRESTORE_DATABASE = os.getenv("FIRESTORE_DATABASE", "(default)")
 SECRET_NAME = os.getenv("SECRET_NAME", "api-key")
 DOCUMENT_AI_PROCESSOR_ID = os.getenv("DOCUMENT_AI_PROCESSOR_ID")
+VERTEX_AI_LOCATION = os.getenv("VERTEX_AI_LOCATION", "southamerica-east1")
 
 
 # --- Secret Manager ---
